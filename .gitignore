@@ -1,0 +1,21 @@
+# Dados pessoais: planilhas exportadas, faturas, dumps do banco. Nunca versionar.
+dados/*
+!dados/.gitkeep
+*.xlsx
+*.xls
+*.csv
+*.pdf
+*.dump
+*.sql.gz
+
+# Segredos
+.env
+.env.*
+!.env.example
+
+# Sistema e ferramentas
+.DS_Store
+node_modules/
+.venv/
+__pycache__/
+.claude/settings.local.json
