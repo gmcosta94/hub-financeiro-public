@@ -17,7 +17,7 @@ Ordem: orçamento e resultados → projetos → carteira → painéis.
 
 As linhas do mês seguem a aba Resultados, na ordem dela:
 
-| Bloco | Linhas | Detalhe da linha (o "pop-up") | Realizado |
+| Bloco | Linhas | Detalhe da linha (os itens, ao expandir a linha) | Realizado |
 |---|---|---|---|
 | Ganhos | Salário Principal, Rendas Paralelas, Outros | itens (fontes) + outros | lançamentos de receita |
 | Descontos | Pessoal A, Pessoal B, Custos da PJ | — | igual ao orçado (não são lançados) |
@@ -35,6 +35,15 @@ Entregas:
 *Pronto quando*: o realizado × orçado de out/2026 no app bate com a aba Resultados, e o orçamento de dez/2026 é montado a partir de um cenário em poucos minutos.
 
 Andamento (13/11/2026): em produção, com a carga de 2026 e dos cenários. Outubro de 2026 bate linha a linha com a aba Resultados, no orçado e no realizado (diferenças de R$ 0,01 de arredondamento da planilha). Carga: `scripts/migrar_orcamento.py` gera `dados/orcamento/carga.sql`.
+
+### Itens do orçamento como linhas agrupadas (23/11/2026)
+
+O detalhe de cada linha saiu do pop-up e passou a funcionar como linhas agrupadas de planilha:
+
+- **Expandir:** tocar na linha (com a seta) expande os itens embaixo dela, e um botão expande ou recolhe todas de uma vez.
+- **Aparência dos itens:** ficam recuados e menores. O orçado fica à direita, editável por quem edita, e grava ao sair do campo ou com Enter. O realizado vem embaixo, na cor da regra.
+- **Soma e valor cheio:** o total da linha é a soma dos itens, e "Outros gastos" guarda o valor sem detalhe. O antigo "valor cheio" é só esse campo preenchido.
+- **Metas:** os projetos mostram o aporte sugerido, e um link aplica o aporte necessário de cada um.
 
 ### Aba Resultados (17/11/2026)
 

@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { competenciaAtual, nomeDoMes, paraNumero, reais, somarMeses } from '../lib/formato'
+import { centavosTexto, competenciaAtual, lerDigitado, nomeDoMes, reais, somarMeses } from '../lib/formato'
 
 // Destinos em que passar do orçado é ruim (gasto e desconto).
 const GASTO = new Set(['gasto_do_mes', 'desconto'])
 
 /**
  * Orçamento do mês: realizado × orçado nas linhas da aba Resultados.
- * Cada linha recebe um valor cheio ou é detalhada por item (ou bolso), e o total
- * é a soma. Cenários são modelos com a mesma forma, usados para preencher o mês.
+ * Cada linha expande nos itens (ou bolsos), como linhas agrupadas de planilha, e o
+ * orçado de cada item se edita ali mesmo; o total da linha é a soma. "Outros gastos"
+ * guarda o valor sem detalhe. Cenários são modelos com a mesma forma.
  * Toda a conta está no banco (resultado_mes, orcamento_detalhe, orcar_linha).
  */
 
@@ -31,9 +32,7 @@ type Parte = {
   sugerido: number | null // aporte necessário do projeto (só nos bolsos de projeto)
 }
 type Cenario = { id: number; nome: string }
-type Contexto = { competencia: string } | { cenarioId: number }
 
-const paraTexto = (v: number) => (v ? v.toFixed(2).replace('.', ',') : '')
 const chaveParte = (p: Parte) => `${p.tipo}:${p.ref_id ?? ''}`
 const parametrosDe = (modo: 'mes' | 'cenario', competencia: string, cenarioId: number | null) =>
   modo === 'mes'
@@ -49,7 +48,8 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
   const [cenarioId, setCenarioId] = useState<number | null>(null)
   const [versao, setVersao] = useState(0)
   const [resultado, setResultado] = useState<{ chave: string; linhas: Linha[]; poupanca: { orcado: number; realizado: number | null } } | null>(null)
-  const [aberta, setAberta] = useState<Linha | null>(null)
+  // Linhas expandidas (pelo id da linha), como grupos de linhas numa planilha.
+  const [abertas, setAbertas] = useState<Set<number>>(() => new Set())
   const [aviso, setAviso] = useState<string | null>(null)
   const [preencher, setPreencher] = useState(false)
 
@@ -62,8 +62,6 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
   }, [])
 
   const cenarioEscolhido = cenarioId ?? cenarios[0]?.id ?? null
-  const contexto: Contexto | null =
-    modo === 'mes' ? { competencia } : cenarioEscolhido !== null ? { cenarioId: cenarioEscolhido } : null
   const chave = `${modo}|${competencia}|${cenarioEscolhido}|${versao}`
 
   useEffect(() => {
@@ -90,11 +88,11 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
   const mostrarRealizado = modo === 'mes'
 
   const blocos = useMemo(() => {
-    const grupos: { nome: string; linhas: Linha[] }[] = []
+    const grupos: { nome: string; ordem: number; linhas: Linha[] }[] = []
     for (const l of linhas) {
       const ultimo = grupos[grupos.length - 1]
       if (ultimo && ultimo.nome === l.bloco) ultimo.linhas.push(l)
-      else grupos.push({ nome: l.bloco, linhas: [l] })
+      else grupos.push({ nome: l.bloco, ordem: l.bloco_ordem, linhas: [l] })
     }
     return grupos
   }, [linhas])
@@ -195,101 +193,146 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
         </div>
       </section>
 
-      {podeEditar && modo === 'mes' && (
-        <div className="acoes-orc">
-          {preencher ? (
-            <>
-              <span className="rotulo">Substituir o orçamento do mês por:</span>
-              <div className="fichas">
-                <button type="button" onClick={() => preencherCom('anterior')}>
-                  Mês anterior
-                </button>
-                {cenarios.map((c) => (
-                  <button key={c.id} type="button" onClick={() => preencherCom(c.id)}>
-                    {c.nome}
+      {/* Ações do mês à esquerda; expandir ou recolher todas as linhas à direita. */}
+      <div className="linha-acoes-orc">
+        {podeEditar && modo === 'mes' && (
+          <div className="acoes-orc">
+            {preencher ? (
+              <>
+                <span className="rotulo">Substituir o orçamento do mês por:</span>
+                <div className="fichas">
+                  <button type="button" onClick={() => preencherCom('anterior')}>
+                    Mês anterior
                   </button>
-                ))}
-                <button type="button" className="discreto" onClick={() => setPreencher(false)}>
-                  Cancelar
-                </button>
-              </div>
-            </>
-          ) : (
-            <button type="button" className="discreto" onClick={() => setPreencher(true)}>
-              Preencher com cenário ou mês anterior…
+                  {cenarios.map((c) => (
+                    <button key={c.id} type="button" onClick={() => preencherCom(c.id)}>
+                      {c.nome}
+                    </button>
+                  ))}
+                  <button type="button" className="discreto" onClick={() => setPreencher(false)}>
+                    Cancelar
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button type="button" className="discreto" onClick={() => setPreencher(true)}>
+                Preencher com cenário ou mês anterior…
+              </button>
+            )}
+          </div>
+        )}
+        {modo === 'cenario' && (
+          <p className="origem">
+            Cenário {nomeCenario}: um modelo para preencher meses. Mudanças aqui não alteram meses já orçados.
+          </p>
+        )}
+        {atual && (
+          <div className="expandir-orc">
+            <button
+              type="button"
+              className="link"
+              onClick={() => setAbertas(abertas.size > 0 ? new Set() : new Set(blocos.flatMap((b) => b.linhas.map((l) => l.linha_id))))}
+            >
+              {abertas.size > 0 ? 'Recolher todas' : 'Expandir todas as categorias'}
             </button>
-          )}
-        </div>
-      )}
-      {modo === 'cenario' && (
-        <p className="origem">
-          Cenário {nomeCenario}: um modelo para preencher meses. Mudanças aqui não alteram meses já orçados.
-        </p>
-      )}
+          </div>
+        )}
+      </div>
 
       {!atual && <p className="vazio">Carregando…</p>}
 
+      {/* Duas colunas fixas (no computador): renda, descontos, poupança e metas à
+          esquerda; custo de vida e o que fica fora dele à direita. Colunas automáticas
+          do CSS não se redistribuem direito quando uma linha expande e recolhe. */}
       <div className="blocos-orc">
-        {blocos.map((b) => {
-          const bo = b.linhas.reduce((s, l) => s + l.orcado, 0)
-          const br = b.linhas.reduce((s, l) => s + (l.realizado ?? 0), 0)
-          // Bloco de gasto acima do orçado fica vermelho; ganhar, poupar e cumprir metas
-          // além do orçado é bom.
-          const blocoEstourou = bo > 0 && br > bo && b.linhas.some((l) => GASTO.has(l.destino))
-          return (
-            <section key={b.nome} className="bloco-orc">
-              <h2>
-                <span>{b.nome}</span>
-                <span className="totais-bloco">
-                  <span>{reais(bo)}</span>
-                  {mostrarRealizado && (
-                    <small className={bo > 0 ? (blocoEstourou ? 'estourou' : 'no-limite') : undefined}>{reais(br)}</small>
-                  )}
-                </span>
-              </h2>
-              <ul>
-                {b.linhas.map((l) => {
-                  const p = pct(l.realizado, l.orcado)
-                  // Vermelho só para gasto acima do orçado; investir e cumprir metas além do
-                  // orçado é bom (fica na cor normal), como na aba Resultados.
-                  const estourou = p !== null && p > 100 && GASTO.has(l.destino)
-                  return (
-                    <li key={l.linha_id}>
-                      <button
-                        type="button"
-                        className="linha-orc"
-                        disabled={!podeEditar}
-                        onClick={() => setAberta(l)}
-                      >
-                        <span className="nome">
-                          {l.nome}
-                          {l.detalhado && <small className="parcela">detalhado</small>}
-                        </span>
-                        {/* Orçado em destaque; o realizado embaixo, na cor da barra. */}
-                        <span className="numeros">
-                          <span className="real">{l.orcado ? reais(l.orcado) : 'sem orçamento'}</span>
-                          {mostrarRealizado && (
-                            <span className={`orc realizado${l.orcado > 0 ? (estourou ? ' estourou' : ' no-limite') : ''}`}>
-                              {reais(l.realizado ?? 0)}
+        {[blocos.filter((b) => b.ordem <= 4), blocos.filter((b) => b.ordem > 4)].map((coluna, i) => (
+          <div key={i} className="coluna-orc">
+            {coluna.map((b) => {
+              const bo = b.linhas.reduce((s, l) => s + l.orcado, 0)
+              const br = b.linhas.reduce((s, l) => s + (l.realizado ?? 0), 0)
+              // Bloco de gasto acima do orçado fica vermelho; ganhar, poupar e cumprir metas
+              // além do orçado é bom.
+              const blocoEstourou = bo > 0 && br > bo && b.linhas.some((l) => GASTO.has(l.destino))
+              return (
+                <section key={b.nome} className="bloco-orc">
+                  <h2>
+                    <span>{b.nome}</span>
+                    <span className="totais-bloco">
+                      <span>{reais(bo)}</span>
+                      {mostrarRealizado && (
+                        <small className={bo > 0 ? (blocoEstourou ? 'estourou' : 'no-limite') : undefined}>{reais(br)}</small>
+                      )}
+                    </span>
+                  </h2>
+                  <ul>
+                    {b.linhas.map((l) => {
+                      const p = pct(l.realizado, l.orcado)
+                      // Vermelho só para gasto acima do orçado; investir e cumprir metas além do
+                      // orçado é bom (fica na cor normal), como na aba Resultados.
+                      const estourou = p !== null && p > 100 && GASTO.has(l.destino)
+                      return (
+                        <li key={l.linha_id}>
+                          <button
+                            type="button"
+                            className="linha-orc"
+                            aria-expanded={abertas.has(l.linha_id)}
+                            onClick={() =>
+                              setAbertas((a) => {
+                                const n = new Set(a)
+                                if (n.has(l.linha_id)) n.delete(l.linha_id)
+                                else n.add(l.linha_id)
+                                return n
+                              })
+                            }
+                          >
+                            <span className="nome">
+                              <span className="seta" aria-hidden="true">
+                                {abertas.has(l.linha_id) ? '▾' : '▸'}
+                              </span>
+                              {l.nome}
+                              {l.detalhado && <small className="parcela">detalhado</small>}
                             </span>
-                          )}
-                        </span>
-                        {mostrarRealizado && l.orcado > 0 && (
-                          <span className="barra" aria-hidden="true">
-                            <span
-                              className={estourou ? 'estourou' : undefined}
-                              style={{ width: `${Math.min(p ?? 0, 100)}%` }}
+                            {/* Orçado em destaque; o realizado embaixo, na cor da barra. */}
+                            <span className="numeros">
+                              <span className="real">{l.orcado ? reais(l.orcado) : 'sem orçamento'}</span>
+                              {mostrarRealizado && (
+                                <span className={`orc realizado${l.orcado > 0 ? (estourou ? ' estourou' : ' no-limite') : ''}`}>
+                                  {reais(l.realizado ?? 0)}
+                                </span>
+                              )}
+                            </span>
+                            {mostrarRealizado && l.orcado > 0 && (
+                              <span className="barra" aria-hidden="true">
+                                <span
+                                  className={estourou ? 'estourou' : undefined}
+                                  style={{ width: `${Math.min(p ?? 0, 100)}%` }}
+                                />
+                              </span>
+                            )}
+                          </button>
+                          {abertas.has(l.linha_id) && (
+                            <DetalheLinha
+                              linha={l}
+                              parametros={parametrosDe(modo, competencia, cenarioEscolhido)}
+                              mostrarRealizado={mostrarRealizado}
+                              podeEditar={podeEditar}
+                              versao={versao}
+                              onSalvo={() => {
+                                setVersao((v) => v + 1)
+                                avisar('Orçamento salvo.')
+                              }}
+                              onErro={avisar}
                             />
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          )
-        })}
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </section>
+              )
+            })}
+          </div>
+        ))}
       </div>
 
       {aviso && (
@@ -298,20 +341,6 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
         </p>
       )}
 
-      {aberta && contexto && (
-        <EditorLinha
-          linha={aberta}
-          contexto={contexto}
-          parametros={parametrosDe(modo, competencia, cenarioEscolhido)}
-          mostrarRealizado={mostrarRealizado}
-          onFechar={() => setAberta(null)}
-          onSalvo={() => {
-            setAberta(null)
-            setVersao((v) => v + 1)
-            avisar('Orçamento salvo.')
-          }}
-        />
-      )}
     </main>
   )
 }
@@ -340,157 +369,125 @@ function Cartao({
 }
 
 /** O "pop-up" da linha: valor cheio ou detalhe por item, com o total somando. */
-function EditorLinha({
+/**
+ * Itens de uma linha, expandidos embaixo dela: o orçado de cada um (editável por quem
+ * edita; grava ao sair do campo) e o realizado embaixo, na cor da regra. O total da
+ * linha é a soma; "Outros gastos" é o valor sem detalhe.
+ */
+function DetalheLinha({
   linha,
-  contexto,
   parametros,
   mostrarRealizado,
-  onFechar,
+  podeEditar,
+  versao,
   onSalvo,
+  onErro,
 }: {
   linha: Linha
-  contexto: Contexto
   parametros: { p_competencia: string | null; p_cenario_id: number | null }
   mostrarRealizado: boolean
-  onFechar: () => void
+  podeEditar: boolean
+  versao: number
   onSalvo: () => void
+  onErro: (m: string) => void
 }) {
-  const [partes, setPartes] = useState<Parte[] | null>(null)
-  const [valores, setValores] = useState<Record<string, string>>({})
-  const [cheio, setCheio] = useState(paraTexto(linha.orcado))
-  const [modoDetalhe, setModoDetalhe] = useState(linha.detalhado)
-  const [erro, setErro] = useState<string | null>(null)
-  const [salvando, setSalvando] = useState(false)
-
   const { p_competencia: pCompetencia, p_cenario_id: pCenario } = parametros
   const linhaId = linha.linha_id
+  const chave = `${linhaId}|${pCompetencia}|${pCenario}|${versao}`
+  const [carga, setCarga] = useState<{ chave: string; partes: Parte[] } | null>(null)
+  // Centavos digitados, por parte; vazio = o que veio do banco.
+  const [editados, setEditados] = useState<Record<string, number>>({})
 
   useEffect(() => {
     let cancelado = false
     supabase
       .rpc('orcamento_detalhe', { p_linha_id: linhaId, p_competencia: pCompetencia, p_cenario_id: pCenario })
       .then(({ data }) => {
-      if (cancelado) return
-      const lista = (data ?? []) as Parte[]
-      setPartes(lista)
-      setValores(Object.fromEntries(lista.map((p) => [chaveParte(p), paraTexto(p.orcado)])))
-    })
+        if (cancelado) return
+        setCarga({ chave, partes: (data ?? []) as Parte[] })
+        setEditados({})
+      })
     return () => {
       cancelado = true
     }
-  }, [linhaId, pCompetencia, pCenario])
+  }, [chave, linhaId, pCompetencia, pCenario])
 
-  const temDetalhe = (partes ?? []).some((p) => p.tipo !== 'outros')
-  const comSugestao = (partes ?? []).filter((p) => p.sugerido !== null && p.sugerido > 0)
-  function usarSugestoes() {
-    setModoDetalhe(true)
-    setValores((v) => ({
-      ...v,
-      ...Object.fromEntries(comSugestao.map((p) => [chaveParte(p), paraTexto(Math.ceil(p.sugerido ?? 0))])),
+  if (!carga) return <p className="itens-orc-carregando">Carregando…</p>
+  const partes = carga.partes
+  const centavos = (p: Parte) => editados[chaveParte(p)] ?? Math.round(p.orcado * 100)
+  const sugestoes = partes.filter((p) => p.sugerido !== null && p.sugerido > 0)
+
+  async function gravar(valores: Record<string, number>) {
+    const lista = partes.map((p) => ({
+      tipo: p.tipo,
+      id: p.ref_id,
+      valor: (valores[chaveParte(p)] ?? Math.round(p.orcado * 100)) / 100,
     }))
-  }
-  const totalDetalhe = (partes ?? []).reduce((s, p) => s + (paraNumero(valores[chaveParte(p)] ?? '') ?? 0), 0)
-
-  async function salvar() {
-    setErro(null)
-    let lista: { tipo: string; id: number | null; valor: number }[]
-    if (modoDetalhe && temDetalhe) {
-      lista = (partes ?? []).map((p) => ({ tipo: p.tipo, id: p.ref_id, valor: paraNumero(valores[chaveParte(p)] ?? '') ?? 0 }))
-    } else {
-      const v = cheio.trim() ? paraNumero(cheio) : 0
-      if (v === null) return setErro('Valor inválido.')
-      lista = [{ tipo: 'outros', id: null, valor: v }]
-    }
-    setSalvando(true)
-    const { error } = await supabase.rpc('orcar_linha', { p_linha_id: linha.linha_id, p_valores: lista, ...parametros })
-    setSalvando(false)
-    if (error) setErro('Não foi possível salvar. Nada foi alterado.')
+    const { error } = await supabase.rpc('orcar_linha', { p_linha_id: linhaId, p_valores: lista, ...parametros })
+    if (error) onErro('Não foi possível salvar. Nada foi alterado.')
     else onSalvo()
   }
 
+  function sair(p: Parte) {
+    const k = chaveParte(p)
+    if (editados[k] !== undefined && editados[k] !== Math.round(p.orcado * 100)) gravar(editados)
+  }
+
   return (
-    <div className="folha-fundo" role="dialog" aria-modal="true" aria-label={`Orçamento de ${linha.nome}`}>
-      <div className="folha">
-        <header>
-          <h2>{linha.nome}</h2>
-          <button type="button" className="fechar" aria-label="Fechar" onClick={onFechar}>
-            ×
-          </button>
-        </header>
-        <p className="origem">
-          {'competencia' in contexto ? nomeDoMes(contexto.competencia) : 'Cenário'}
-          {mostrarRealizado && linha.destino !== 'desconto' && ` · realizado até agora ${reais(linha.realizado ?? 0)}`}
-        </p>
-
-        {partes === null && <p className="vazio">Carregando…</p>}
-
-        {partes !== null && temDetalhe && (
-          <div className="segmentos pequenos">
-            <button type="button" className={!modoDetalhe ? 'ativo' : undefined} onClick={() => setModoDetalhe(false)}>
-              Valor cheio
-            </button>
-            <button type="button" className={modoDetalhe ? 'ativo' : undefined} onClick={() => setModoDetalhe(true)}>
-              Detalhar
-            </button>
-          </div>
-        )}
-
-        {comSugestao.length > 0 && (
-          <button type="button" className="discreto" onClick={usarSugestoes}>
+    <ul className="itens-orc">
+      {partes.map((p) => {
+        const orcado = centavos(p) / 100
+        const estourou = GASTO.has(linha.destino) && orcado > 0 && (p.realizado ?? 0) > orcado
+        const nome = p.tipo === 'outros' && partes.length === 1 ? 'Valor (sem detalhe)' : p.nome
+        return (
+          <li key={chaveParte(p)}>
+            <span className="nome-item">
+              {nome}
+              {p.sugerido !== null && p.sugerido > 0 && <small>sugerido {reais(p.sugerido)}</small>}
+            </span>
+            <span className="numeros-item">
+              {podeEditar ? (
+                <input
+                  className="valor-item"
+                  inputMode="numeric"
+                  placeholder="0,00"
+                  value={centavos(p) ? centavosTexto(centavos(p)) : ''}
+                  onChange={(e) => {
+                    const lido = lerDigitado(e.target.value)
+                    if (lido) setEditados((v) => ({ ...v, [chaveParte(p)]: lido.centavos ?? 0 }))
+                  }}
+                  onBlur={() => sair(p)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur()
+                  }}
+                  aria-label={`Orçado para ${p.nome} em ${linha.nome}`}
+                />
+              ) : (
+                <span className="valor-item">{orcado ? reais(orcado) : '–'}</span>
+              )}
+              {mostrarRealizado && p.realizado !== null && (
+                <small className={orcado > 0 ? (estourou ? 'estourou' : 'no-limite') : undefined}>{reais(p.realizado)}</small>
+              )}
+            </span>
+          </li>
+        )
+      })}
+      {podeEditar && sugestoes.length > 0 && (
+        <li className="acao-item">
+          <button
+            type="button"
+            className="link"
+            onClick={() =>
+              gravar({
+                ...editados,
+                ...Object.fromEntries(sugestoes.map((p) => [chaveParte(p), Math.ceil(p.sugerido ?? 0) * 100])),
+              })
+            }
+          >
             Usar o aporte necessário de cada projeto
           </button>
-        )}
-
-        {partes !== null && (!modoDetalhe || !temDetalhe) && (
-          <label className="campo-valor">
-            <span>R$</span>
-            <input
-              inputMode="decimal"
-              placeholder="0,00"
-              value={cheio}
-              onChange={(e) => setCheio(e.target.value)}
-              aria-label="Valor orçado"
-              autoFocus
-            />
-          </label>
-        )}
-
-        {partes !== null && modoDetalhe && temDetalhe && (
-          <>
-            <ul className="detalhe-orc">
-              {partes.map((p) => (
-                <li key={chaveParte(p)}>
-                  <span className="texto">
-                    <span className="nome">{p.nome}</span>
-                    {mostrarRealizado && p.realizado !== null && (
-                      <span className="detalhe">realizado {reais(p.realizado)}</span>
-                    )}
-                    {p.sugerido !== null && p.sugerido > 0 && (
-                      <span className="detalhe">sugerido {reais(p.sugerido)}</span>
-                    )}
-                  </span>
-                  <input
-                    className="campo"
-                    inputMode="decimal"
-                    placeholder="0,00"
-                    value={valores[chaveParte(p)] ?? ''}
-                    onChange={(e) => setValores((v) => ({ ...v, [chaveParte(p)]: e.target.value }))}
-                    aria-label={`Orçado para ${p.nome}`}
-                  />
-                </li>
-              ))}
-            </ul>
-            <p className="total-orc">
-              Total <strong>{reais(totalDetalhe)}</strong>
-            </p>
-          </>
-        )}
-
-        {erro && <p className="erro">{erro}</p>}
-        <button type="button" className="principal" disabled={salvando || partes === null} onClick={salvar}>
-          {salvando ? 'Salvando…' : 'Salvar'}
-        </button>
-      </div>
-    </div>
+        </li>
+      )}
+    </ul>
   )
 }

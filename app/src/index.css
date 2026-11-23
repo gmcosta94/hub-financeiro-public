@@ -1343,6 +1343,125 @@ select:focus-visible {
   color: var(--alerta);
 }
 
+/* Orçamento: linhas que expandem nos itens, como linhas agrupadas de planilha. */
+.linha-acoes-orc {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.expandir-orc {
+  margin-left: auto;
+  padding: 0 4px;
+}
+
+.expandir-orc .link {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.linha-orc .nome .seta {
+  display: inline-block;
+  width: 14px;
+  color: var(--suave);
+  font-size: 0.8rem;
+}
+
+.bloco-orc .itens-orc,
+.itens-orc-carregando {
+  margin: 0;
+  padding: 2px 0 8px;
+  list-style: none;
+  border: 0;
+  border-top: 1px solid var(--grade);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--fundo) 55%, var(--cartao));
+}
+
+.itens-orc-carregando {
+  padding: 8px 12px 8px 38px;
+  color: var(--suave);
+  font-size: 0.8rem;
+}
+
+.bloco-orc .itens-orc li,
+.bloco-orc .itens-orc li + li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 5px 12px 5px 38px;
+  border-top: 0;
+}
+
+.nome-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--suave);
+  font-size: 0.85rem;
+}
+
+.nome-item small {
+  font-size: 0.72rem;
+  color: var(--mudo);
+}
+
+.numeros-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.numeros-item small {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--suave);
+}
+
+.numeros-item small.no-limite {
+  color: var(--destaque);
+}
+
+.numeros-item small.estourou {
+  color: var(--alerta);
+}
+
+/* O orçado do item: parece texto até passar o mouse ou focar. */
+.valor-item {
+  width: 7.5rem;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--texto);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+input.valor-item:hover {
+  border-color: var(--linha);
+}
+
+input.valor-item:focus {
+  border-color: var(--destaque);
+  background: var(--cartao);
+  outline: none;
+}
+
+.bloco-orc .itens-orc li.acao-item {
+  display: block;
+  padding-top: 6px;
+}
+
+.acao-item .link {
+  font-size: 0.8rem;
+}
+
 /* Orçamento: o realizado (embaixo do orçado) na cor da barra. */
 .linha-orc .orc.realizado {
   font-size: 0.8rem;
@@ -3083,16 +3202,15 @@ button.link {
     justify-content: flex-start;
   }
 
+  /* Duas colunas fixas; cada uma empilha os seus blocos. */
   .blocos-orc {
-    columns: 2;
-    column-gap: 24px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 24px;
+    align-items: start;
   }
 
-  .blocos-orc .bloco-orc {
-    break-inside: avoid;
-  }
-
-  .blocos-orc .bloco-orc:first-child h2 {
+  .coluna-orc > .bloco-orc:first-child h2 {
     margin-top: 12px;
   }
 
