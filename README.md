@@ -12,7 +12,7 @@ React + TypeScript (PWA) · Postgres/Supabase with RLS · Cloudflare · Central 
 
 <sub>The app's interface is in Portuguese. All screens use fictional data.</sub>
 
-> Public showcase. Development happens in a private repository since November 11, 2026 (34 commits as of this update); this one holds the code, the decision documents and the screens, without personal data.
+> Public showcase. Development happens in a private repository since November 11, 2026 (35 commits as of this update); this one holds the code, the decision documents and the screens, without personal data.
 
 ## The problem
 

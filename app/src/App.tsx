@@ -12,6 +12,22 @@ import { Paineis } from './telas/Paineis'
 import { Resultados } from './telas/Resultados'
 
 type Tela = 'paineis' | 'lancamentos' | 'orcamento' | 'resultados' | 'projetos' | 'carteira' | 'cadastros'
+
+// A aba atual fica no endereço (#/orcamento): recarregar a página volta para ela, e o
+// Voltar do navegador anda entre as abas.
+const ENDERECO: Record<Tela, string> = {
+  paineis: 'paineis',
+  lancamentos: 'lancamentos',
+  orcamento: 'orcamento',
+  resultados: 'resultados',
+  projetos: 'projetos',
+  carteira: 'investimentos',
+  cadastros: 'cadastros',
+}
+function telaDoEndereco(): Tela {
+  const h = window.location.hash.replace(/^#\/?/, '')
+  return (Object.keys(ENDERECO) as Tela[]).find((t) => ENDERECO[t] === h) ?? 'paineis'
+}
 // Cor de cada tela (index.css, "--area-*"): o horizonte de tempo do dinheiro.
 const AREA: Record<Tela, string> = {
   paineis: 'area-geral',
@@ -45,7 +61,17 @@ export default function App() {
   }, [])
 
   const [atalhoAberto, setAtalhoAberto] = useState(false)
-  const [tela, setTela] = useState<Tela>('paineis')
+  const [tela, setTelaAtual] = useState<Tela>(telaDoEndereco)
+  function setTela(t: Tela) {
+    setTelaAtual(t)
+    const alvo = `#/${ENDERECO[t]}`
+    if (window.location.hash !== alvo) window.history.pushState(null, '', alvo)
+  }
+  useEffect(() => {
+    const voltar = () => setTelaAtual(telaDoEndereco())
+    window.addEventListener('popstate', voltar)
+    return () => window.removeEventListener('popstate', voltar)
+  }, [])
 
   const userId = sessao?.user.id
   useEffect(() => {
