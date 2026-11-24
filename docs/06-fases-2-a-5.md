@@ -41,7 +41,8 @@ Andamento (13/11/2026): em produção, com a carga de 2026 e dos cenários. Outu
 O detalhe de cada linha saiu do pop-up e passou a funcionar como linhas agrupadas de planilha:
 
 - **Expandir:** tocar na linha (com a seta) expande os itens embaixo dela, e um botão expande ou recolhe todas de uma vez.
-- **Aparência dos itens:** ficam recuados e menores. O orçado fica à direita, editável por quem edita, e grava ao sair do campo ou com Enter. O realizado vem embaixo, na cor da regra.
+- **Aparência dos itens:** ficam recuados e menores. O orçado fica à direita, editável por quem edita, e o realizado vem embaixo, na cor da regra.
+- **Edição como célula de planilha:** ao clicar, o valor fica selecionado. Digitar "300" vira 300,00, e centavos entram com vírgula. Grava ao sair do campo ou com Enter (Esc desfaz), e o novo valor e os totais aparecem na hora, sem recarregar a tela nem mostrar aviso.
 - **Soma e valor cheio:** o total da linha é a soma dos itens, e "Outros gastos" guarda o valor sem detalhe. O antigo "valor cheio" é só esse campo preenchido.
 - **Metas:** os projetos mostram o aporte sugerido, e um link aplica o aporte necessário de cada um.
 

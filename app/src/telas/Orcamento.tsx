@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { centavosTexto, competenciaAtual, lerDigitado, nomeDoMes, reais, somarMeses } from '../lib/formato'
+import { centavosTexto, competenciaAtual, nomeDoMes, paraNumero, reais, somarMeses } from '../lib/formato'
 
 // Destinos em que passar do orçado é ruim (gasto e desconto).
 const GASTO = new Set(['gasto_do_mes', 'desconto'])
@@ -34,6 +34,11 @@ type Parte = {
 type Cenario = { id: number; nome: string }
 
 const chaveParte = (p: Parte) => `${p.tipo}:${p.ref_id ?? ''}`
+const semChave = (o: Record<string, string>, k: string) => {
+  const n = { ...o }
+  delete n[k]
+  return n
+}
 const parametrosDe = (modo: 'mes' | 'cenario', competencia: string, cenarioId: number | null) =>
   modo === 'mes'
     ? { p_competencia: competencia, p_cenario_id: null }
@@ -47,7 +52,15 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
   const [cenarios, setCenarios] = useState<Cenario[]>([])
   const [cenarioId, setCenarioId] = useState<number | null>(null)
   const [versao, setVersao] = useState(0)
-  const [resultado, setResultado] = useState<{ chave: string; linhas: Linha[]; poupanca: { orcado: number; realizado: number | null } } | null>(null)
+  const [resultado, setResultado] = useState<{
+    chave: string
+    contexto: string
+    linhas: Linha[]
+    poupanca: { orcado: number; realizado: number | null }
+  } | null>(null)
+  // Recarrega os itens abertos só quando o mês inteiro muda (preencher com cenário);
+  // gravar um item atualiza a própria linha na hora, sem recarregar nada.
+  const [versaoItens, setVersaoItens] = useState(0)
   // Linhas expandidas (pelo id da linha), como grupos de linhas numa planilha.
   const [abertas, setAbertas] = useState<Set<number>>(() => new Set())
   const [aviso, setAviso] = useState<string | null>(null)
@@ -62,7 +75,7 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
   }, [])
 
   const cenarioEscolhido = cenarioId ?? cenarios[0]?.id ?? null
-  const chave = `${modo}|${competencia}|${cenarioEscolhido}|${versao}`
+  const contexto = `${modo}|${competencia}|${cenarioEscolhido}`
 
   useEffect(() => {
     if (modo === 'cenario' && cenarioEscolhido === null) return
@@ -74,6 +87,7 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
       const pp = (po.data as { orcado: number; realizado: number | null }[] | null)?.[0]
       setResultado({
         chave: chaveDoPedido,
+        contexto: `${modo}|${competencia}|${cenarioEscolhido}`,
         linhas: (r.data ?? []) as Linha[],
         poupanca: pp ?? { orcado: 0, realizado: null },
       })
@@ -83,7 +97,9 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
     }
   }, [modo, competencia, cenarioEscolhido, versao])
 
-  const atual = resultado?.chave === chave ? resultado : null
+  // Mesmo mês ou cenário: continua mostrando os números enquanto os novos chegam
+  // (depois de gravar um item, a tela não pisca nem mostra "Carregando").
+  const atual = resultado?.contexto === contexto ? resultado : null
   const linhas = useMemo(() => atual?.linhas ?? [], [atual])
   const mostrarRealizado = modo === 'mes'
 
@@ -127,6 +143,7 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
     if (error) avisar('Não foi possível preencher.')
     else {
       setVersao((v) => v + 1)
+      setVersaoItens((v) => v + 1)
       avisar('Orçamento do mês preenchido. Ajuste o que quiser.')
     }
   }
@@ -316,11 +333,8 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
                               parametros={parametrosDe(modo, competencia, cenarioEscolhido)}
                               mostrarRealizado={mostrarRealizado}
                               podeEditar={podeEditar}
-                              versao={versao}
-                              onSalvo={() => {
-                                setVersao((v) => v + 1)
-                                avisar('Orçamento salvo.')
-                              }}
+                              recarga={versaoItens}
+                              onSalvo={() => setVersao((v) => v + 1)}
                               onErro={avisar}
                             />
                           )}
@@ -370,16 +384,18 @@ function Cartao({
 
 /** O "pop-up" da linha: valor cheio ou detalhe por item, com o total somando. */
 /**
- * Itens de uma linha, expandidos embaixo dela: o orçado de cada um (editável por quem
- * edita; grava ao sair do campo) e o realizado embaixo, na cor da regra. O total da
- * linha é a soma; "Outros gastos" é o valor sem detalhe.
+ * Itens de uma linha, expandidos embaixo dela, editados como células de planilha:
+ * o orçado de cada um (quem edita digita "300" e vira 300,00; centavos com vírgula)
+ * grava ao sair do campo e já aparece na hora, sem recarregar a tela. O realizado
+ * vem embaixo, na cor da regra. O total da linha é a soma; "Outros gastos" é o
+ * valor sem detalhe.
  */
 function DetalheLinha({
   linha,
   parametros,
   mostrarRealizado,
   podeEditar,
-  versao,
+  recarga,
   onSalvo,
   onErro,
 }: {
@@ -387,25 +403,23 @@ function DetalheLinha({
   parametros: { p_competencia: string | null; p_cenario_id: number | null }
   mostrarRealizado: boolean
   podeEditar: boolean
-  versao: number
+  recarga: number
   onSalvo: () => void
   onErro: (m: string) => void
 }) {
   const { p_competencia: pCompetencia, p_cenario_id: pCenario } = parametros
   const linhaId = linha.linha_id
-  const chave = `${linhaId}|${pCompetencia}|${pCenario}|${versao}`
+  const chave = `${linhaId}|${pCompetencia}|${pCenario}|${recarga}`
   const [carga, setCarga] = useState<{ chave: string; partes: Parte[] } | null>(null)
-  // Centavos digitados, por parte; vazio = o que veio do banco.
-  const [editados, setEditados] = useState<Record<string, number>>({})
+  // Texto do campo enquanto está sendo editado (por parte).
+  const [textos, setTextos] = useState<Record<string, string>>({})
 
   useEffect(() => {
     let cancelado = false
     supabase
       .rpc('orcamento_detalhe', { p_linha_id: linhaId, p_competencia: pCompetencia, p_cenario_id: pCenario })
       .then(({ data }) => {
-        if (cancelado) return
-        setCarga({ chave, partes: (data ?? []) as Parte[] })
-        setEditados({})
+        if (!cancelado) setCarga({ chave, partes: (data ?? []) as Parte[] })
       })
     return () => {
       cancelado = true
@@ -414,33 +428,41 @@ function DetalheLinha({
 
   if (!carga) return <p className="itens-orc-carregando">Carregando…</p>
   const partes = carga.partes
-  const centavos = (p: Parte) => editados[chaveParte(p)] ?? Math.round(p.orcado * 100)
   const sugestoes = partes.filter((p) => p.sugerido !== null && p.sugerido > 0)
+  const texto = (v: number) => (v ? centavosTexto(Math.round(v * 100)) : '')
 
-  async function gravar(valores: Record<string, number>) {
-    const lista = partes.map((p) => ({
-      tipo: p.tipo,
-      id: p.ref_id,
-      valor: (valores[chaveParte(p)] ?? Math.round(p.orcado * 100)) / 100,
-    }))
+  // Grava a linha inteira com os valores dados e já mostra o novo valor; se o banco
+  // recusar, volta ao que estava.
+  async function gravar(novos: Record<string, number>) {
+    const antes = partes
+    const depois = partes.map((p) => (chaveParte(p) in novos ? { ...p, orcado: novos[chaveParte(p)] } : p))
+    setCarga((c) => (c ? { ...c, partes: depois } : c))
+    const lista = depois.map((p) => ({ tipo: p.tipo, id: p.ref_id, valor: p.orcado }))
     const { error } = await supabase.rpc('orcar_linha', { p_linha_id: linhaId, p_valores: lista, ...parametros })
-    if (error) onErro('Não foi possível salvar. Nada foi alterado.')
-    else onSalvo()
+    if (error) {
+      setCarga((c) => (c ? { ...c, partes: antes } : c))
+      onErro('Não foi possível salvar. Nada foi alterado.')
+    } else onSalvo()
   }
 
   function sair(p: Parte) {
     const k = chaveParte(p)
-    if (editados[k] !== undefined && editados[k] !== Math.round(p.orcado * 100)) gravar(editados)
+    const digitado = textos[k]
+    setTextos((t) => semChave(t, k))
+    if (digitado === undefined) return
+    const valor = digitado.trim() === '' ? 0 : paraNumero(digitado)
+    if (valor === null || valor < 0 || valor === p.orcado) return
+    gravar({ [k]: valor })
   }
 
   return (
     <ul className="itens-orc">
       {partes.map((p) => {
-        const orcado = centavos(p) / 100
-        const estourou = GASTO.has(linha.destino) && orcado > 0 && (p.realizado ?? 0) > orcado
+        const k = chaveParte(p)
+        const estourou = GASTO.has(linha.destino) && p.orcado > 0 && (p.realizado ?? 0) > p.orcado
         const nome = p.tipo === 'outros' && partes.length === 1 ? 'Valor (sem detalhe)' : p.nome
         return (
-          <li key={chaveParte(p)}>
+          <li key={k}>
             <span className="nome-item">
               {nome}
               {p.sugerido !== null && p.sugerido > 0 && <small>sugerido {reais(p.sugerido)}</small>}
@@ -449,24 +471,30 @@ function DetalheLinha({
               {podeEditar ? (
                 <input
                   className="valor-item"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   placeholder="0,00"
-                  value={centavos(p) ? centavosTexto(centavos(p)) : ''}
-                  onChange={(e) => {
-                    const lido = lerDigitado(e.target.value)
-                    if (lido) setEditados((v) => ({ ...v, [chaveParte(p)]: lido.centavos ?? 0 }))
+                  value={textos[k] ?? texto(p.orcado)}
+                  onFocus={(e) => {
+                    const alvo = e.currentTarget
+                    setTextos((t) => ({ ...t, [k]: texto(p.orcado) }))
+                    requestAnimationFrame(() => alvo.select())
                   }}
+                  onChange={(e) => setTextos((t) => ({ ...t, [k]: e.target.value }))}
                   onBlur={() => sair(p)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') e.currentTarget.blur()
+                    if (e.key === 'Escape') {
+                      setTextos((t) => semChave(t, k))
+                      requestAnimationFrame(() => (document.activeElement as HTMLElement | null)?.blur())
+                    }
                   }}
                   aria-label={`Orçado para ${p.nome} em ${linha.nome}`}
                 />
               ) : (
-                <span className="valor-item">{orcado ? reais(orcado) : '–'}</span>
+                <span className="valor-item">{p.orcado ? reais(p.orcado) : '–'}</span>
               )}
               {mostrarRealizado && p.realizado !== null && (
-                <small className={orcado > 0 ? (estourou ? 'estourou' : 'no-limite') : undefined}>{reais(p.realizado)}</small>
+                <small className={p.orcado > 0 ? (estourou ? 'estourou' : 'no-limite') : undefined}>{reais(p.realizado)}</small>
               )}
             </span>
           </li>
@@ -477,12 +505,7 @@ function DetalheLinha({
           <button
             type="button"
             className="link"
-            onClick={() =>
-              gravar({
-                ...editados,
-                ...Object.fromEntries(sugestoes.map((p) => [chaveParte(p), Math.ceil(p.sugerido ?? 0) * 100])),
-              })
-            }
+            onClick={() => gravar(Object.fromEntries(sugestoes.map((p) => [chaveParte(p), Math.ceil(p.sugerido ?? 0)])))}
           >
             Usar o aporte necessário de cada projeto
           </button>

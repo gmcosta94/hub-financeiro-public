@@ -29,6 +29,14 @@ Uma base de código, dois arranjos, com o ponto de quebra em 1024px. O mesmo val
     - Carteira com alocação de um lado e satélite, previdência e rentabilidade do outro.
 - **Ajuste fino dentro dos cartões:** por consulta de contêiner, e não de janela, porque no computador um cartão pode ser estreito.
 
+## Atualização do app instalado (24/11/2026)
+
+O app guarda os próprios arquivos no aparelho (PWA), então uma aba aberta continuava na versão antiga depois de cada publicação. Agora `app/src/lib/atualizacao.ts` cuida disso:
+
+- **Quando procura:** ao abrir, a cada meia hora e sempre que a aba volta a ficar visível.
+- **Quando troca:** recarrega sozinho na versão nova, mas só quando nada está sendo editado (nenhuma folha aberta e nenhum campo em foco). Enquanto houver, espera.
+- **Configuração:** o service worker está em `registerType: 'prompt'`. Quem decide a hora da troca é o app, não o `autoUpdate`, que recarregaria no meio de um lançamento.
+
 ## Cores (18/11/2026)
 
 **Superfícies:** fundo "gelo" (`#f1f3f5`, cinza bem claro e levemente frio); cartões, folhas e menu lateral em branco.
