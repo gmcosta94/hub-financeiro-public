@@ -61,12 +61,12 @@ O PDF em si não é guardado.
 
 ## Orçamento
 
-**`cenario`** — Ideal, Reduzido, Mínimo, Economia. `nome`, `ordem`. São modelos: o orçamento de um mês começa de um cenário (`aplicar_cenario`) ou do mês anterior (`copiar_orcamento`) e depois é ajustado.
+**`cenario`** — Ideal, Reduzido, Mínimo, Economia. `nome`, `ordem`. São modelos: o orçamento de um mês começa de um cenário (`aplicar_cenario`) ou do mês anterior (`copiar_orcamento`) e depois é ajustado. Na aba Orçamento se cria um cenário (em branco ou cópia de outro, `criar_cenario`), renomeia e apaga (apagar leva os valores dele; meses já preenchidos não mudam).
 
 **`orcamento`** (migration `20261113000005`)
 Um valor de um mês (`competencia`) **ou** de um cenário (`cenario_id`), para exatamente uma destas coisas: `categoria_id` (a linha inteira, ou "Outros gastos" quando a linha é detalhada), `item_id` (um item da categoria) ou `bolso_id` (reserva, carteira, amortização ou projeto). O total de uma linha é a soma do que a compõe.
 As linhas do mês são as da aba Resultados: cada categoria, mais "Poupança e Investimentos" e "Metas" como uma linha só cada (`v_linha_categoria`, `v_linha_bolso` dizem a que linha pertence cada categoria e bolso).
-Funções: `resultado_mes` (realizado × orçado de um mês, ou o orçado de um cenário), `orcamento_detalhe` (o detalhe de uma linha), `orcar_linha` (regrava uma linha), `poupanca_mes` (para a taxa de poupança), `aplicar_cenario`, `copiar_orcamento`, `salvar_cenario`.
+Funções: `resultado_mes` (realizado × orçado de um mês, ou o orçado de um cenário), `orcamento_detalhe` (o detalhe de uma linha), `orcar_linha` (regrava uma linha), `poupanca_mes` (para a taxa de poupança), `aplicar_cenario`, `copiar_orcamento`, `salvar_cenario`, `criar_cenario`, `criar_item` (novo item numa categoria, pela linha expandida do orçamento; nome repetido reativa o que existe).
 
 **Descontos** — grupo de categorias (Pessoal A, Pessoal B, Custos da PJ) com `destino = desconto`. Não são lançados: entram só no orçamento, e no realizado valem o mesmo que o orçado.
 
@@ -77,6 +77,8 @@ Decidido em 13/11/2026 (substitui a decisão de 11/11): projetos têm alvo nomin
 **`projeto`** (migration `20261113000006`) — os Projetos Futuros de Metas (viagem, carro, reforma, educação) e a Reserva de Emergência, que tem alvo e prazo mas conta na poupança (o bolso dela aponta para o projeto e continua com `conta_na_poupanca`).
 `nome`, `valor_alvo`, `inicio`, `fim`, `pct_cdi` (1 = 100% do CDI), `saldo_inicial` + `saldo_inicial_em` + `saldo_definido_em` (o ponto de partida da estimativa), `status` (ativo | realizado | cancelado). O horizonte é calculado: até 12 meses curto, até 36 médio, depois longo.
 Saldo estimado = saldo de partida corrigido pelo CDI + aportes − resgates no bolso, cada um corrigido desde a sua data, − gastos pagos com o dinheiro do projeto. Entra o que é posterior ao ponto de partida (no mesmo dia, o que foi registrado depois dele). "Corrigir saldo" (`corrigir_saldo_projeto`) troca o ponto de partida pelo saldo real do banco.
+
+Projeto que acaba com dinheiro no bolso: ao marcá-lo como realizado ou cancelado, o app pergunta o que foi feito com o saldo (`liquidar_projeto`, com o saldo estimado no dia escolhido). Liquidar = o dinheiro foi resgatado e já gasto: vira um gasto em Projetos Realizados pago com o projeto (zera o bolso e não entra no mês). Passar para outro projeto = resgate deste e aporte no outro, no mesmo dia. Continuar guardado = o saldo segue no patrimônio.
 Gasto do projeto = lançamento em Projetos Realizados com `projeto_id`. Com `pago_com_projeto` baixa o saldo e fica fora do mês; sem, entra em Metas no mês. Os dois contam como já gasto.
 Funções: `projetos_situacao` (alvo, separado, já gasto, falta, aporte necessário), `projecao_projetos` (mês a mês), `criar_projeto`, `editar_projeto`, `corrigir_saldo_projeto`, `apagar_projeto` (recusa se houver aportes ou resgates; gastos ligados ficam, sem o projeto), `fator_cdi`, `cdi_mensal_projetado`. O aporte necessário é o `PMT` da planilha (pagamento no início do mês, prazo por `DATEDIF`), com o prazo contado do maior entre o mês atual e o início.
 

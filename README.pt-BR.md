@@ -12,7 +12,7 @@ React + TypeScript (PWA) · Postgres/Supabase com RLS · Cloudflare · dados abe
 
 <sub>Todas as telas usam dados fictícios.</sub>
 
-> Vitrine pública. O desenvolvimento acontece num repositório privado desde 11/11/2026 (35 commits até esta atualização); aqui ficam o código, os documentos de decisão e as telas, sem os dados pessoais.
+> Vitrine pública. O desenvolvimento acontece num repositório privado desde 11/11/2026 (36 commits até esta atualização); aqui ficam o código, os documentos de decisão e as telas, sem os dados pessoais.
 
 ## O problema
 

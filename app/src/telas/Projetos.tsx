@@ -15,6 +15,7 @@ export type Projeto = {
   projeto_id: number
   nome: string
   status: 'ativo' | 'realizado' | 'cancelado'
+  bolso_id: number
   conta_na_poupanca: boolean
   valor_alvo: number
   inicio: string
@@ -30,6 +31,8 @@ export type Projeto = {
   aporte_necessario: number
   horizonte: 'curto' | 'medio' | 'longo'
 }
+// Bolso para onde pode ir o saldo de um projeto que acabou (outro projeto ativo ou a reserva).
+type Destino = { projeto_id: number; bolso_id: number; nome: string }
 type Projecao = { projeto_id: number; competencia: string; aporte: number; horizonte: 'curto' | 'medio' | 'longo' }
 
 const HORIZONTE = { curto: 'curto prazo', medio: 'médio prazo', longo: 'longo prazo' }
@@ -37,7 +40,7 @@ const pct = (v: number) => `${(v * 100).toFixed(2).replace('.', ',')}%`
 
 export function Projetos({ podeEditar }: { podeEditar: boolean }) {
   const [versao, setVersao] = useState(0)
-  const [dados, setDados] = useState<{ projetos: Projeto[]; projecao: Projecao[] } | null>(null)
+  const [dados, setDados] = useState<{ projetos: Projeto[]; projecao: Projecao[]; destinos: Destino[] } | null>(null)
   const [aberto, setAberto] = useState<Projeto | 'novo' | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
 
@@ -64,7 +67,9 @@ export function Projetos({ podeEditar }: { podeEditar: boolean }) {
       // A reserva de emergência tem alvo e prazo como um projeto, mas mora na aba
       // Investimentos: fica fora desta tela e das somas dela.
       const reserva = new Set(((r.data ?? []) as { projeto_id: number | null }[]).map((b) => b.projeto_id))
+      const todos = (s.data ?? []) as Projeto[]
       setDados({
+        destinos: todos.filter((x) => x.status === 'ativo'),
         projetos: ((s.data ?? []) as Projeto[]).filter((x) => !reserva.has(x.projeto_id)),
         projecao: ((p.data ?? []) as Projecao[]).filter((x) => !reserva.has(x.projeto_id)),
       })
@@ -212,6 +217,7 @@ export function Projetos({ podeEditar }: { podeEditar: boolean }) {
                   <span>{p.nome}</span>
                   <span>
                     {reais(p.gasto)} <small>{p.status === 'realizado' ? 'realizado' : 'cancelado'}</small>
+                    {p.saldo >= 1 && <small className="saldo-esquecido">{reais(p.saldo)} ainda no bolso</small>}
                   </span>
                 </button>
               </li>
@@ -234,6 +240,7 @@ export function Projetos({ podeEditar }: { podeEditar: boolean }) {
       {aberto && (
         <EditorProjeto
           projeto={aberto === 'novo' ? null : aberto}
+          destinos={(dados?.destinos ?? []).filter((d) => aberto === 'novo' || d.projeto_id !== aberto.projeto_id)}
           onFechar={() => setAberto(null)}
           onSalvo={(m) => {
             setAberto(null)
@@ -314,6 +321,10 @@ function LinhaDoTempo({ projetos }: { projetos: Projeto[] }) {
 }
 
 const mesInput = (d: string) => d.slice(0, 7) // 'AAAA-MM-DD' -> 'AAAA-MM'
+const hojeIso = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 const paraTexto = (v: number) => v.toFixed(2).replace('.', ',')
 
 /**
@@ -324,12 +335,14 @@ export function EditorProjeto({
   projeto,
   reserva = false,
   bolsoReserva,
+  destinos = [],
   onFechar,
   onSalvo,
 }: {
   projeto: Projeto | null
   reserva?: boolean
   bolsoReserva?: number
+  destinos?: Destino[]
   onFechar: () => void
   onSalvo: (mensagem: string) => void
 }) {
@@ -344,6 +357,14 @@ export function EditorProjeto({
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [confirmandoApagar, setConfirmandoApagar] = useState(false)
+  // Projeto que acaba com dinheiro no bolso: o que foi feito com ele. Ao encerrar agora,
+  // a pergunta é obrigatória; num projeto já encerrado, o padrão é deixar como está.
+  const [fimSaldo, setFimSaldo] = useState<'liquidar' | 'transferir' | 'manter' | null>(
+    projeto && projeto.status !== 'ativo' ? 'manter' : null,
+  )
+  const [bolsoDestino, setBolsoDestino] = useState<number | null>(null)
+  const [dataSaldo, setDataSaldo] = useState(hojeIso)
+  const perguntaSaldo = !reserva && !!projeto && status !== 'ativo' && projeto.saldo >= 0.01
 
   async function salvar() {
     setErro(null)
@@ -353,7 +374,25 @@ export function EditorProjeto({
     if (valorAlvo === null || valorAlvo <= 0) return setErro('Alvo inválido.')
     if (!inicio || !fim || fim <= inicio) return setErro('O mês final precisa vir depois do início.')
     if (!Number.isFinite(percentual) || percentual <= 0) return setErro('Percentual do CDI inválido.')
+    if (perguntaSaldo && fimSaldo === null) return setErro('Diga o que foi feito com o saldo do projeto.')
+    if (perguntaSaldo && fimSaldo === 'transferir' && bolsoDestino === null) return setErro('Escolha para qual projeto o saldo foi.')
+    if (perguntaSaldo && fimSaldo !== 'manter' && (!dataSaldo || dataSaldo > hojeIso())) return setErro('Data inválida.')
     setSalvando(true)
+    // Primeiro o saldo: se o banco recusar (data antes do saldo de partida, por exemplo),
+    // nada muda.
+    let movido: number | null = null
+    if (projeto && perguntaSaldo && fimSaldo !== 'manter') {
+      const r = await supabase.rpc('liquidar_projeto', {
+        p_id: projeto.projeto_id,
+        p_data: dataSaldo,
+        p_bolso_destino: fimSaldo === 'transferir' ? bolsoDestino : null,
+      })
+      if (r.error) {
+        setSalvando(false)
+        return setErro(r.error.message.startsWith('A data') ? `${r.error.message}.` : 'Não foi possível mexer no saldo. Nada foi alterado.')
+      }
+      movido = r.data as number
+    }
     const resposta = projeto
       ? await supabase.rpc('editar_projeto', {
           p_id: projeto.projeto_id,
@@ -375,9 +414,18 @@ export function EditorProjeto({
           ...(reserva && bolsoReserva ? { p_bolso_id: bolsoReserva } : {}),
         })
     setSalvando(false)
-    if (resposta.error) setErro('Não foi possível salvar. Nada foi alterado.')
+    const destino = destinos.find((d) => d.bolso_id === bolsoDestino)?.nome
+    const doSaldo =
+      movido === null ? '' : fimSaldo === 'liquidar' ? ` ${reais(movido)} liquidados.` : ` ${reais(movido)} passados para ${destino}.`
+    if (resposta.error) setErro(`Não foi possível salvar o projeto.${doSaldo}`)
     else
-      onSalvo(reserva ? 'Reserva atualizada.' : projeto ? 'Projeto atualizado.' : 'Projeto criado. Os aportes vão pelo "Guardar".')
+      onSalvo(
+        reserva
+          ? 'Reserva atualizada.'
+          : projeto
+            ? `Projeto atualizado.${doSaldo}`
+            : 'Projeto criado. Os aportes vão pelo "Guardar".',
+      )
   }
 
   async function corrigirSaldo() {
@@ -457,6 +505,63 @@ export function EditorProjeto({
             {reserva ? 'Quanto a reserva tem hoje (R$)' : 'Já separado hoje (R$, opcional)'}
             <input className="campo" inputMode="decimal" value={saldoInicial} onChange={(e) => setSaldoInicial(e.target.value)} />
           </label>
+        )}
+
+        {perguntaSaldo && projeto && (
+          <fieldset className="fim-saldo">
+            <legend>O que foi feito com os {reais(projeto.saldo)} do bolso?</legend>
+            <div className="opcoes-saldo">
+              {(
+                [
+                  ['liquidar', 'Liquidar', 'foi resgatado e já gasto'],
+                  ['transferir', 'Passou para outro projeto', 'resgate deste e aporte no outro'],
+                  ['manter', 'Continua guardado', 'segue no patrimônio'],
+                ] as const
+              ).map(([v, titulo, detalhe]) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={fimSaldo === v ? 'ativo' : undefined}
+                  aria-pressed={fimSaldo === v}
+                  onClick={() => setFimSaldo(v)}
+                >
+                  <strong>{titulo}</strong>
+                  <small>{detalhe}</small>
+                </button>
+              ))}
+            </div>
+            {fimSaldo === 'transferir' && (
+              <label className="campo-rotulado">
+                Para
+                <select
+                  className="campo"
+                  value={bolsoDestino ?? ''}
+                  onChange={(e) => setBolsoDestino(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">Escolha o projeto</option>
+                  {destinos.map((d) => (
+                    <option key={d.bolso_id} value={d.bolso_id}>
+                      {d.nome}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {(fimSaldo === 'liquidar' || fimSaldo === 'transferir') && (
+              <>
+                <label className="campo-rotulado">
+                  Em
+                  <input className="campo" type="date" max={hojeIso()} value={dataSaldo} onChange={(e) => setDataSaldo(e.target.value)} />
+                </label>
+                <p className="origem">
+                  {fimSaldo === 'liquidar'
+                    ? 'Vira um gasto em Projetos Realizados pago com o dinheiro do projeto: zera o bolso e não entra no resultado do mês.'
+                    : 'O valor é o saldo estimado no dia escolhido.'}{' '}
+                  Para desfazer, apague o registro na aba Lançamentos.
+                </p>
+              </>
+            )}
+          </fieldset>
         )}
 
         {erro && <p className="erro">{erro}</p>}

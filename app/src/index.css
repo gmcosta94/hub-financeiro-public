@@ -3349,3 +3349,96 @@ button.link {
     max-width: 880px;
   }
 }
+
+/* ---------------------------------------------- Projeto que acaba com saldo no bolso */
+.fim-saldo {
+  border: 1px solid var(--linha);
+  border-radius: 10px;
+  padding: 10px 12px 12px;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.fim-saldo legend {
+  font-weight: 600;
+  padding: 0 4px;
+}
+.opcoes-saldo {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.opcoes-saldo button {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--linha);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--texto);
+}
+.opcoes-saldo button small {
+  color: var(--suave);
+  font-size: 0.78rem;
+}
+.opcoes-saldo button.ativo {
+  border-color: var(--destaque);
+  background: var(--destaque);
+  color: var(--sobre-destaque);
+}
+.opcoes-saldo button.ativo small {
+  color: inherit;
+  opacity: 0.85;
+}
+@media (max-width: 420px) {
+  .opcoes-saldo {
+    grid-template-columns: 1fr;
+  }
+}
+.saldo-esquecido {
+  display: block;
+  color: var(--alerta);
+}
+
+/* ------------------------------------------------- Orçamento: cenários e novo item */
+.sobre-cenario {
+  display: grid;
+  gap: 6px;
+  flex: 1 1 320px;
+}
+.acoes-cenario {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+button.link.perigo-link {
+  color: var(--alerta);
+}
+.editor-cenario {
+  display: grid;
+  gap: 8px;
+  max-width: 420px;
+  padding: 10px 12px;
+  border: 1px solid var(--linha);
+  border-radius: 10px;
+  background: var(--cartao);
+}
+.editor-cenario p {
+  margin: 0;
+}
+.botoes-cenario {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.botoes-cenario .principal,
+.botoes-cenario .perigo {
+  width: auto;
+  padding: 8px 14px;
+}
+.novo-item-orc .campo {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 0.9rem;
+}

@@ -65,6 +65,7 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
   const [abertas, setAbertas] = useState<Set<number>>(() => new Set())
   const [aviso, setAviso] = useState<string | null>(null)
   const [preencher, setPreencher] = useState(false)
+  const [versaoCenarios, setVersaoCenarios] = useState(0)
 
   useEffect(() => {
     supabase
@@ -72,9 +73,9 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
       .select('id,nome')
       .order('ordem')
       .then(({ data }) => setCenarios((data ?? []) as Cenario[]))
-  }, [])
+  }, [versaoCenarios])
 
-  const cenarioEscolhido = cenarioId ?? cenarios[0]?.id ?? null
+  const cenarioEscolhido = (cenarios.some((c) => c.id === cenarioId) ? cenarioId : null) ?? cenarios[0]?.id ?? null
   const contexto = `${modo}|${competencia}|${cenarioEscolhido}`
 
   useEffect(() => {
@@ -239,9 +240,27 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
           </div>
         )}
         {modo === 'cenario' && (
-          <p className="origem">
-            Cenário {nomeCenario}: um modelo para preencher meses. Mudanças aqui não alteram meses já orçados.
-          </p>
+          <div className="sobre-cenario">
+            {nomeCenario ? (
+              <p className="origem">
+                Cenário {nomeCenario}: um modelo para preencher meses. Mudanças aqui não alteram meses já orçados.
+              </p>
+            ) : (
+              <p className="origem">Nenhum cenário ainda.</p>
+            )}
+            {podeEditar && (
+              <GerenciarCenarios
+                key={cenarioEscolhido ?? 'nenhum'}
+                cenarios={cenarios}
+                escolhido={cenarios.find((c) => c.id === cenarioEscolhido) ?? null}
+                onMudou={(id, mensagem) => {
+                  setVersaoCenarios((v) => v + 1)
+                  setCenarioId(id)
+                  avisar(mensagem)
+                }}
+              />
+            )}
+          </div>
         )}
         {atual && (
           <div className="expandir-orc">
@@ -256,7 +275,7 @@ export function Orcamento({ podeEditar }: { podeEditar: boolean }) {
         )}
       </div>
 
-      {!atual && <p className="vazio">Carregando…</p>}
+      {!atual && !(modo === 'cenario' && cenarios.length === 0) && <p className="vazio">Carregando…</p>}
 
       {/* Duas colunas fixas (no computador): renda, descontos, poupança e metas à
           esquerda; custo de vida e o que fica fora dele à direita. Colunas automáticas
@@ -409,7 +428,11 @@ function DetalheLinha({
 }) {
   const { p_competencia: pCompetencia, p_cenario_id: pCenario } = parametros
   const linhaId = linha.linha_id
-  const chave = `${linhaId}|${pCompetencia}|${pCenario}|${recarga}`
+  // Item criado aqui: recarrega a linha e já põe o cursor no valor dele.
+  const [criados, setCriados] = useState(0)
+  const [focar, setFocar] = useState<string | null>(null)
+  const [novoItem, setNovoItem] = useState<string | null>(null)
+  const chave = `${linhaId}|${pCompetencia}|${pCenario}|${recarga}|${criados}`
   const [carga, setCarga] = useState<{ chave: string; partes: Parte[] } | null>(null)
   // Texto do campo enquanto está sendo editado (por parte).
   const [textos, setTextos] = useState<Record<string, string>>({})
@@ -427,6 +450,18 @@ function DetalheLinha({
   }, [chave, linhaId, pCompetencia, pCenario])
 
   if (!carga) return <p className="itens-orc-carregando">Carregando…</p>
+  // Itens ficam numa categoria; as linhas de Poupança e Metas são grupos (bolsos).
+  const aceitaItem = podeEditar && linha.destino !== 'investimentos' && linha.destino !== 'metas'
+
+  async function criarItem() {
+    const nome = (novoItem ?? '').trim()
+    if (!nome) return setNovoItem(null)
+    const { data, error } = await supabase.rpc('criar_item', { p_categoria_id: linhaId, p_nome: nome })
+    if (error) return onErro('Não foi possível criar o item.')
+    setNovoItem(null)
+    setFocar(`item:${data as number}`)
+    setCriados((v) => v + 1)
+  }
   const partes = carga.partes
   const sugestoes = partes.filter((p) => p.sugerido !== null && p.sugerido > 0)
   const texto = (v: number) => (v ? centavosTexto(Math.round(v * 100)) : '')
@@ -471,6 +506,7 @@ function DetalheLinha({
               {podeEditar ? (
                 <input
                   className="valor-item"
+                  autoFocus={focar === k}
                   inputMode="decimal"
                   placeholder="0,00"
                   value={textos[k] ?? texto(p.orcado)}
@@ -480,7 +516,10 @@ function DetalheLinha({
                     requestAnimationFrame(() => alvo.select())
                   }}
                   onChange={(e) => setTextos((t) => ({ ...t, [k]: e.target.value }))}
-                  onBlur={() => sair(p)}
+                  onBlur={() => {
+                    if (focar === k) setFocar(null)
+                    sair(p)
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') e.currentTarget.blur()
                     if (e.key === 'Escape') {
@@ -511,6 +550,152 @@ function DetalheLinha({
           </button>
         </li>
       )}
+      {aceitaItem && (
+        <li className="acao-item novo-item-orc">
+          {novoItem === null ? (
+            <button type="button" className="link" onClick={() => setNovoItem('')}>
+              + Novo item em {linha.nome}
+            </button>
+          ) : (
+            <input
+              className="campo"
+              autoFocus
+              placeholder="Nome do item (Enter cria)"
+              value={novoItem}
+              onChange={(e) => setNovoItem(e.target.value)}
+              onBlur={() => !novoItem.trim() && setNovoItem(null)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') criarItem()
+                if (e.key === 'Escape') setNovoItem(null)
+              }}
+              aria-label={`Nome do novo item em ${linha.nome}`}
+            />
+          )}
+        </li>
+      )}
     </ul>
+  )
+}
+
+/**
+ * Novo cenário (em branco ou cópia de outro), renomear e apagar o escolhido.
+ * Apagar leva junto os valores do cenário; meses já preenchidos com ele não mudam.
+ */
+function GerenciarCenarios({
+  cenarios,
+  escolhido,
+  onMudou,
+}: {
+  cenarios: Cenario[]
+  escolhido: Cenario | null
+  onMudou: (escolher: number | null, mensagem: string) => void
+}) {
+  const [acao, setAcao] = useState<'novo' | 'renomear' | 'apagar' | null>(null)
+  const [nome, setNome] = useState('')
+  const [base, setBase] = useState('')
+  const [erro, setErro] = useState<string | null>(null)
+  const [salvando, setSalvando] = useState(false)
+
+  function abrir(a: 'novo' | 'renomear' | 'apagar') {
+    setAcao(a)
+    setErro(null)
+    setNome(a === 'renomear' ? (escolhido?.nome ?? '') : '')
+    setBase(a === 'novo' && escolhido ? String(escolhido.id) : '')
+  }
+
+  async function confirmar() {
+    setErro(null)
+    const n = nome.trim()
+    if (acao !== 'apagar' && !n) return setErro('Dê um nome ao cenário.')
+    if (acao === 'novo' || acao === 'renomear') {
+      const repetido = cenarios.some(
+        (c) => c.nome.toLowerCase() === n.toLowerCase() && (acao === 'novo' || c.id !== escolhido?.id),
+      )
+      if (repetido) return setErro('Já existe um cenário com esse nome.')
+    }
+    setSalvando(true)
+    if (acao === 'novo') {
+      const { data, error } = await supabase.rpc('criar_cenario', { p_nome: n, p_copiar_de: base ? Number(base) : null })
+      setSalvando(false)
+      if (error) return setErro('Não foi possível criar o cenário.')
+      setAcao(null)
+      onMudou(data as number, `Cenário ${n} criado.`)
+    } else if (acao === 'renomear' && escolhido) {
+      const { error } = await supabase.from('cenario').update({ nome: n }).eq('id', escolhido.id)
+      setSalvando(false)
+      if (error) return setErro('Não foi possível renomear.')
+      setAcao(null)
+      onMudou(escolhido.id, 'Cenário renomeado.')
+    } else if (acao === 'apagar' && escolhido) {
+      const { error } = await supabase.from('cenario').delete().eq('id', escolhido.id)
+      setSalvando(false)
+      if (error) return setErro('Não foi possível apagar.')
+      setAcao(null)
+      onMudou(null, `Cenário ${escolhido.nome} apagado.`)
+    }
+  }
+
+  if (acao === null)
+    return (
+      <div className="acoes-cenario">
+        <button type="button" className="link" onClick={() => abrir('novo')}>
+          + Novo cenário
+        </button>
+        {escolhido && (
+          <>
+            <button type="button" className="link" onClick={() => abrir('renomear')}>
+              Renomear
+            </button>
+            <button type="button" className="link perigo-link" onClick={() => abrir('apagar')}>
+              Apagar
+            </button>
+          </>
+        )}
+      </div>
+    )
+
+  return (
+    <div className="editor-cenario">
+      {acao === 'apagar' ? (
+        <p>
+          Apagar o cenário <strong>{escolhido?.nome}</strong> e os valores dele? Meses já preenchidos com ele não mudam. Não
+          dá para desfazer.
+        </p>
+      ) : (
+        <>
+          <input
+            className="campo"
+            autoFocus
+            placeholder="Nome do cenário"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') confirmar()
+              if (e.key === 'Escape') setAcao(null)
+            }}
+            aria-label="Nome do cenário"
+          />
+          {acao === 'novo' && (
+            <select className="campo" value={base} onChange={(e) => setBase(e.target.value)} aria-label="Começar com">
+              <option value="">Começar em branco</option>
+              {cenarios.map((c) => (
+                <option key={c.id} value={c.id}>
+                  Cópia de {c.nome}
+                </option>
+              ))}
+            </select>
+          )}
+        </>
+      )}
+      <div className="botoes-cenario">
+        <button type="button" className={acao === 'apagar' ? 'perigo' : 'principal'} disabled={salvando} onClick={confirmar}>
+          {acao === 'novo' ? 'Criar' : acao === 'renomear' ? 'Salvar' : 'Apagar cenário'}
+        </button>
+        <button type="button" className="discreto" onClick={() => setAcao(null)}>
+          Cancelar
+        </button>
+      </div>
+      {erro && <p className="erro">{erro}</p>}
+    </div>
   )
 }
